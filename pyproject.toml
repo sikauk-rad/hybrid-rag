@@ -1,0 +1,22 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "hybrid_rag"
+version = "0.0.1"
+authors = [
+  {name = "Milan Kundra", email = "kundra.milan@uk.sika.com" },
+]
+description = "Package containing useful functions for creating RAG systems, utilising embeddings, TDF-IF and BM25 keyword search."
+readme = "README.md"
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+# [project.urls]
+# Homepage = "https://github.com/SikaSIS/hybrid-rag"
+# Issues = "https://github.com/SikaSIS/hybrid-rag/issues"
