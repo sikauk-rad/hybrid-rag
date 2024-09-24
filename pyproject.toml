@@ -15,7 +15,6 @@ dependencies = [
   "openai>=1.0.0",
   "tiktoken>=0.6.0",
   "beartype>=0.17.0",
-  "asyncio",
   "scikit-learn>=0.21.0",
   "cachetools",
   "sentence_transformers",
