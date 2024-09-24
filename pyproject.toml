@@ -8,6 +8,22 @@ version = "0.0.1"
 authors = [
   {name = "Milan Kundra", email = "kundra.milan@uk.sika.com" },
 ]
+dependencies = [
+  "polars>=1.0.0",
+  "numpy==1.26.4",
+  "orjson",
+  "openai>=1.0.0",
+  "tiktoken>=0.6.0",
+  "beartype>=0.17.0",
+  "asyncio",
+  "sklearn>=1.5.0",
+  "cachetools",
+  "sentence_transformers",
+  "nltk",
+  "tokenizers",
+  "scipy>=1.14.0",
+  "bm25s",
+]
 description = "Package containing useful functions for creating RAG systems, utilising embeddings, TDF-IF and BM25 keyword search."
 readme = "README.md"
 requires-python = ">=3.10"
