@@ -13,7 +13,7 @@ dependencies = [
   "numpy==1.26.4",
   "orjson",
   "openai>=1.0.0",
-  "tiktoken>=0.6.0",
+  "tiktoken>=0.7.0",
   "beartype>=0.17.0",
   "scikit-learn>=0.21.0",
   "cachetools",
