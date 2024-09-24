@@ -313,6 +313,7 @@ class RetrievalAugmentedGenerator:
         rerank_score_threshold: Number = -1,
         question_model_history_token_limit: int = 0,
         question_model_custom_history:  list[OpenAIMessageType] | None = None,
+        process_model_target_language: str = 'British English',
         process_model_temperature: Number = 0,
         process_model_history_token_limit: int = 0,
         process_model_custom_history:  list[OpenAIMessageType] | None = None,
@@ -336,6 +337,7 @@ class RetrievalAugmentedGenerator:
         )
         processed_response, token_count = self.process_response(
             response,
+            target_language = process_model_target_language,
             temperature = process_model_temperature,
             history_token_limit = process_model_history_token_limit,
             custom_history = process_model_custom_history,
@@ -366,6 +368,7 @@ class RetrievalAugmentedGenerator:
         rerank_score_threshold: Number = -1,
         question_model_history_token_limit: int = 0,
         question_model_custom_history:  list[dict[Literal['role', 'content', 'tokens'], str | int]] | None = None,
+        process_model_target_language: str = 'British English',
         process_model_temperature: Number = 0,
         process_model_history_token_limit: int = 0,
         process_model_custom_history:  list[dict[Literal['role', 'content', 'tokens'], str | int]] | None = None,
@@ -389,6 +392,7 @@ class RetrievalAugmentedGenerator:
         )
         processed_response, token_count = await self.aprocess_response(
             response,
+            target_language = process_model_target_language,
             temperature = process_model_temperature,
             history_token_limit = process_model_history_token_limit,
             custom_history = process_model_custom_history,
