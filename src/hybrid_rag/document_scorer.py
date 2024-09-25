@@ -1,3 +1,6 @@
+from warnings import simplefilter
+simplefilter(action='ignore', category=FutureWarning)
+
 import polars as pl
 from polars.datatypes.classes import DataTypeClass
 import numpy as np
@@ -22,7 +25,7 @@ class DocumentScorer:
         document_sizes: list[int] | NDArray[np.integer],
         transformers: dict[str, TextTransformer],
         *,
-        similarity_weights: dict[str, Number] = {},
+        rank_weights: dict[str, Number] = {},
         transform_arguments: dict[str, dict[str, Any]] = {},
         score_arguments: dict[str, dict[str, Any]] = {},
         metadata: dict[str, list[str | Number]] = {},
@@ -44,7 +47,11 @@ class DocumentScorer:
             name = '__index__',
         )
 
-        self.transform_arguments, self.score_arguments, self.similarity_weights = {},{},{}
+        self.transform_arguments, self.score_arguments = {},{}
+        self.score_rank_rename = {}
+        self.rank_reciprocal_rename = {}
+        self.weighted_rank_rename = {}
+        self.rank_weights = {}
         for column_name in transformers.keys():
             self.transform_arguments[column_name] = transform_arguments.get(
                 column_name, 
@@ -54,7 +61,13 @@ class DocumentScorer:
                 column_name,
                 {}
             )
-            self.similarity_weights[f'{column_name} score'] = similarity_weights.get(
+            rank_name = f'{column_name} rank'
+            reciprocal_name = f'{column_name} reciprocal rank'
+            weighted_name = f'{column_name} weighted reciprocal rank'
+            self.score_rank_rename[f'{column_name} score'] = rank_name
+            self.rank_reciprocal_rename[rank_name] = reciprocal_name
+            self.weighted_rank_rename[reciprocal_name] = weighted_name
+            self.rank_weights[weighted_name] = rank_weights.get(
                 column_name,
                 1.,
             )
@@ -103,7 +116,7 @@ class DocumentScorer:
     ) -> dict[str, list[list[float]] | NDArray[np.floating]]:
         
         return dict(zip(
-            self.similarity_columns.keys(),
+            self.transformers.keys(),
             await gather(*[
                 text_transformer.atransform(
                     query,
@@ -116,17 +129,49 @@ class DocumentScorer:
     def _calculate_weighted_score(
         self,
         score_table: pl.DataFrame,
-        fusion_factor: Number = 1,
+        fusion_factor: Number,
     ) -> pl.DataFrame:
 
-        return score_table.with_columns(
+        rank_table = score_table.with_columns(
+            pl.col(
+                *self.score_rank_rename.keys()
+            ).fill_null(
+                0
+            ).fill_nan(
+                0
+            ).rank(
+                method = 'min',
+                descending = True,
+            ).name.map(
+                self.score_rank_rename.get
+            )
+        )
+        reciprocal_rank_table = rank_table.with_columns(
+            (
+                1 / (pl.col(
+                    *self.rank_reciprocal_rename.keys()
+                ) + fusion_factor)
+            ).name.map(
+                self.rank_reciprocal_rename.get
+            )
+        )
+        weighted_rank_table = reciprocal_rank_table.with_columns(
+            (pl.col(
+                reciprocal_col
+            ) * self.rank_weights[weight_col]).alias(
+                weight_col
+            ) for reciprocal_col, weight_col in self.weighted_rank_rename.items()
+        )
+        return weighted_rank_table.with_columns(
             pl.sum_horizontal(
-                ((1 / (pl.col(col).arg_sort() + fusion_factor)) * weight) for col, weight in self.similarity_weights.items()
+                pl.col(
+                    *self.rank_weights.keys()
+                )
             ).alias(
-                'weighted score'
+                'fused weighted reciprocal rank'
             )
         ).sort(
-            by = 'weighted score',
+            by = 'fused weighted reciprocal rank',
             descending = True,
         )
 
@@ -146,8 +191,8 @@ class DocumentScorer:
     def score_documents(
         self,
         query: str,
+        fusion_factor: Number,
         filters: Iterable[pl.Expr] = [],
-        fusion_factor: Number = 1,
     ) -> pl.DataFrame:
 
         filtered_documents = self._filter_documents(self.document_table, filters)
@@ -155,21 +200,25 @@ class DocumentScorer:
         if not filtered_documents.shape[0]:
             return filtered_documents
 
+        index = filtered_documents['__index__'].to_numpy()
+
+        scored_documents = filtered_documents.with_columns(
+            pl.Series(
+                score_column,
+                text_transformer.score(
+                    query, 
+                    document_indices = index,
+                    **self.transform_arguments[column_name],
+                ),
+                dtype = pl.Float32,
+            ) for (column_name, text_transformer), score_column in zip(
+                self.transformers.items(),
+                self.score_rank_rename.keys(),
+            )
+        )
+
         return self._calculate_weighted_score(
-            filtered_documents.with_columns(
-                pl.Series(
-                    score_column,
-                    text_transformer.score(
-                        query, 
-                        document_indices = filtered_documents['__index__'].to_numpy(),
-                        **self.transform_arguments[column_name],
-                    ),
-                    dtype = pl.Float32,
-                ) for (column_name, text_transformer), score_column in zip(
-                    self.transformers.items(),
-                    self.similarity_weights.keys(),
-                )
-            ),
+            scored_documents,
             fusion_factor = fusion_factor,
         )
 
@@ -177,8 +226,8 @@ class DocumentScorer:
     async def ascore_documents(
         self,
         query: str,
+        fusion_factor: Number,
         filters: Iterable[pl.Expr] = [],
-        fusion_factor: Number = 1,
     ) -> pl.DataFrame:
 
         filtered_documents = self._filter_documents(self.document_table, filters)
@@ -186,22 +235,27 @@ class DocumentScorer:
         if not filtered_documents.shape[0]:
             return filtered_documents
 
-        document_scores = await gather(*[text_transformer.score(
+        index = filtered_documents['__index__'].to_numpy()
+
+        document_scores = await gather(*[text_transformer.ascore(
             query,
-            document_indices = filtered_documents['__index__'].to_numpy(),
+            document_indices = index,
             **self.transform_arguments[column_name],
         ) for column_name, text_transformer in self.transformers.items()])
+
+        scored_documents = filtered_documents.with_columns(
+            pl.Series(
+                score_column,
+                document_score,
+                dtype = pl.Float32,
+            ) for score_column, document_score in zip(
+                self.score_rank_rename.keys(),
+                document_scores,
+            )
+        )
+
         return self._calculate_weighted_score(
-            filtered_documents.with_columns(
-                pl.Series(
-                    score_column,
-                    document_score,
-                    dtype = pl.Float32,
-                ) for score_column, document_score in zip(
-                    self.similarity_weights.keys(),
-                    document_scores,
-                )
-            ),
+            scored_documents,
             fusion_factor = fusion_factor,
         )
 
@@ -233,7 +287,8 @@ class DocumentScorer:
         ).filter(
             pl.col('rerank score') >= rerank_score_threshold
         ).sort(
-            by = 'rerank score'
+            by = 'rerank score',
+            descending = True,
         )
 
 
@@ -241,59 +296,85 @@ class DocumentScorer:
         self,
         query: str,
         k: int,
-        weighted_score_threshold: Number,
         content_size_limit: Number,
         filters: Iterable[pl.Expr] = [],
+        k_multiplier: Number = 2.,
+        weighted_rank_threshold: Number = 0.,
         fusion_factor: Number = 1,
         rerank: bool = True,
-        rerank_score_threshold: Number = -1.,
+        rerank_score_threshold: Number = -np.inf,
+        verbose: bool = False,
     ) -> pl.DataFrame:
+
+        if k_multiplier < 1:
+            raise ValueError(f'k_multipler must exceed 1.')
 
         relevant_documents = self.score_documents(
             query, 
-            filters, 
+            filters = filters, 
             fusion_factor = fusion_factor,
         )
         filtered_documents = relevant_documents.filter(
-            pl.col('weighted score') > weighted_score_threshold
-        )[:k]
+            pl.col('fused weighted reciprocal rank') > weighted_rank_threshold
+        )[:round(k_multiplier * k)]
         if rerank and filtered_documents.shape[0]:
-            filtered_documents = self.rank_sort_filter_documents(
+            reranked_documents = self.rank_sort_filter_documents(
                 query,
                 filtered_documents,
                 rerank_score_threshold,
             )
-        return filtered_documents.filter(
+        else:
+            reranked_documents = filtered_documents
+        final_documents = reranked_documents[:k].filter(
             pl.col('content size').cum_sum() < content_size_limit,
         )
+        if verbose:
+            print(f'{relevant_documents.shape[0]} relevant_documents.')
+            print(f'{filtered_documents.shape[0]} filtered_documents.')
+            print(f'{reranked_documents.shape[0]} reranked_documents.')
+            print(f'{final_documents.shape[0]} final_documents.')
+        return final_documents
 
 
     async def aget_top_k_documents(
         self,
         query: str,
         k: int,
-        weighted_score_threshold: Number,
         content_size_limit: Number,
         filters: Iterable[pl.Expr] = [],
+        k_multiplier: Number = 2.,
+        weighted_rank_threshold: Number = 0.,
         fusion_factor: Number = 1,
         rerank: bool = True,
-        rerank_score_threshold: Number = -1,
+        rerank_score_threshold: Number = -np.inf,
+        verbose: bool = False,
     ) -> pl.DataFrame:
+
+        if k_multiplier < 1:
+            raise ValueError(f'k_multipler must exceed 1.')
 
         relevant_documents = await self.ascore_documents(
             query, 
-            filters, 
+            filters = filters, 
             fusion_factor = fusion_factor,
         )
         filtered_documents = relevant_documents.filter(
-            pl.col('weighted score') > weighted_score_threshold
-        )[:k]
+            pl.col('fused weighted reciprocal rank') > weighted_rank_threshold
+        )[:round(k_multiplier * k)]
         if rerank and filtered_documents.shape[0]:
-            filtered_documents = self.rank_sort_filter_documents(
+            reranked_documents = self.rank_sort_filter_documents(
                 query,
                 filtered_documents,
                 rerank_score_threshold,
             )
-        return filtered_documents.filter(
+        else:
+            reranked_documents = filtered_documents
+        final_documents = reranked_documents[:k].filter(
             pl.col('content size').cum_sum() < content_size_limit,
         )
+        if verbose:
+            print(f'{relevant_documents.shape[0]} relevant_documents.')
+            print(f'{filtered_documents.shape[0]} filtered_documents.')
+            print(f'{reranked_documents.shape[0]} reranked_documents.')
+            print(f'{final_documents.shape[0]} final_documents.')
+        return final_documents

@@ -1419,7 +1419,7 @@ class TextBM25(TextTransformer):
         token_map: dict[str, int] | None = None,
     )-> NDArray[np.int64]:
 
-        return self.transform(text, token_map)
+        return self.transform(text, token_map = token_map)
 
 
     def transform_multiple(
@@ -1440,7 +1440,7 @@ class TextBM25(TextTransformer):
         token_map: dict[str, int] | None = None,
     )-> list[NDArray[np.int64]]:
 
-        return self.transform_multiple(texts, token_map)
+        return self.transform_multiple(texts, token_map = token_map)
 
 
     @staticmethod
@@ -1490,15 +1490,17 @@ class TextBM25(TextTransformer):
         self,
         text: str,
         normalise: bool = True,
+        document_indices: list[int] | NDArray[np.integer] | None = None,
         documents: NDArray[np.floating] | sparray | None = None,
         token_map: dict[str, int] | None = None,
     ) -> NDArray[np.floating]:
 
         return self.score(
             text,
-            normalise,
-            documents,
-            token_map,
+            normalise = normalise,
+            document_indices = document_indices,
+            documents = documents,
+            token_map = token_map,
         )
 
 
