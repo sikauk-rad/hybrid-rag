@@ -1,5 +1,8 @@
 from beartype import beartype
 import openai
+from .types import OpenAIMessageCountType
+from operator import itemgetter
+from numpy import fromiter
 
 def check_all_arguments_are_none_or_not(
     *args,
@@ -107,3 +110,24 @@ def load_openai_clients(
             max_retries = max_retries,
         ),
     )
+
+
+def get_allowed_history(
+    messages: list[OpenAIMessageCountType],
+    token_limit: int,
+    strip_counts: bool = True,
+) -> list[OpenAIMessageCountType]:
+
+    token_reverse_cumsums = fromiter(
+        map(itemgetter('tokens'), messages),
+        dtype = 'int64',
+        count = len(messages),
+    )[::-1].cumsum()[::-1]
+    messages = messages[(token_reverse_cumsums >= token_limit).argmin():]
+
+    if not strip_counts:
+        return messages
+    else:
+        return [{
+            key: value for key, value in d.items() if key != 'tokens'
+        } for d in messages]

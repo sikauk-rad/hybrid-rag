@@ -11,7 +11,10 @@ from time import sleep
 from numbers import Number
 from numpy.typing import NDArray
 from .base import EmbeddingModelInterface, ChatModelInterface
+from .types import OpenAIMessageCountType, OpenAIMessageType
+from .utilities import get_allowed_history
 from .text_transformers.embedding_transformers import EmbeddingCache
+from functools import lru_cache
 
 
 @beartype
@@ -167,7 +170,7 @@ class OpenAIChatModelInterface(ChatModelInterface):
 
     def respond(
         self,
-        messages: list[dict[Literal['role', 'content'], str]],
+        messages: list[OpenAIMessageType],
         temperature: Number = 0,
         return_token_count: bool = False,
     ) -> tuple[str, int] | str:
@@ -183,7 +186,7 @@ class OpenAIChatModelInterface(ChatModelInterface):
 
     async def arespond(
         self,
-        messages: list[dict[Literal['role', 'content'], str]],
+        messages: list[OpenAIMessageType],
         temperature: Number = 0,
         return_token_count: bool = False,
     ) -> tuple[str, int] | str:
@@ -195,6 +198,40 @@ class OpenAIChatModelInterface(ChatModelInterface):
         )
         answer = response.choices[0].message.content
         return (answer, response.usage.completion_tokens) if return_token_count else answer
+
+
+    def trim_and_respond(
+        self,
+        messages: list[OpenAIMessageCountType],
+        temperature: Number = 0,
+        return_token_count: bool = False,
+    ) -> tuple[str, int] | str:
+
+        return self.respond(
+            messages = get_allowed_history(
+                messages,
+                self.token_input_limit,
+            ),
+            temperature = temperature,
+            return_token_count = return_token_count,
+        )
+
+
+    async def atrim_and_respond(
+        self,
+        messages: list[OpenAIMessageCountType],
+        temperature: Number = 0,
+        return_token_count: bool = False,
+    ) -> tuple[str, int] | str:
+
+        return await self.arespond(
+            messages = get_allowed_history(
+                messages,
+                self.token_input_limit,
+            ),
+            temperature = temperature,
+            return_token_count = return_token_count,
+        )
 
 
     def tokenise(
