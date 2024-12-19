@@ -21,7 +21,8 @@ dependencies = [
   "nltk",
   "tokenizers",
   "scipy>=1.14.0",
-  "PyStemmer==2.2.0.1"
+  "PyStemmer==2.2.0.1",
+  "pydantic>=2.7.0"
 ]
 description = "Package containing useful functions for creating RAG systems, utilising embeddings, TDF-IF and BM25 keyword search."
 readme = "README.md"
