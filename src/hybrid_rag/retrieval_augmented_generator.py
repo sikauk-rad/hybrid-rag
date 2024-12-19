@@ -7,7 +7,8 @@ from numbers import Number
 from .base import ChatModelInterface
 from .document_scorer import DocumentScorer
 from operator import itemgetter
-from .types import OpenAIMessageType, OpenAIMessageCountType
+from .datatypes import OpenAIMessageType, OpenAIMessageCountType
+from .utilities import get_allowed_history
 
 
 @beartype
@@ -36,14 +37,14 @@ class RetrievalAugmentedGenerator:
         self.history_token_limit = (
             self.history_chat_model.token_input_limit 
             - 
-            self.history_chat_model.get_token_length('\n'.join(self.history_prompts))
+            self.history_chat_model.tokeniser.get_token_length('\n'.join(self.history_prompts))
             - 
             10
         )
         self.question_token_limit = (
             self.question_chat_model.token_input_limit
             -
-            self.question_chat_model.get_token_length('\n'.join(self.question_prompts))
+            self.question_chat_model.tokeniser.get_token_length('\n'.join(self.question_prompts))
             -
             10
         )
@@ -52,27 +53,27 @@ class RetrievalAugmentedGenerator:
         self.token_getter = itemgetter('tokens')
 
 
-    def _get_allowed_history(
-        self,
-        token_limit: int,
-        custom_history: list[OpenAIMessageCountType] | None = None,
-    ) -> list[OpenAIMessageType]:
+    # def _get_allowed_history(
+    #     self,
+    #     token_limit: int,
+    #     custom_history: list[OpenAIMessageCountType] | None = None,
+    # ) -> list[OpenAIMessageType]:
 
-        if custom_history is None:
-            history = self.chat_history
-        else:
-            history = custom_history
-        if (not history) or (token_limit < 2):
-            return []
+    #     if custom_history is None:
+    #         history = self.chat_history
+    #     else:
+    #         history = custom_history
+    #     if (not history) or (token_limit < 2):
+    #         return []
 
-        token_counts = np.cumsum(
-            [*map(self.token_getter, history)],
-        )
-        token_count_index = (token_counts > token_limit).argmax()
-        return [{
-            'role': d['role'], 
-            'content': d['content'],
-        } for d in history[-token_count_index:]]
+    #     token_counts = np.cumsum(
+    #         [*map(self.token_getter, history)],
+    #     )
+    #     token_count_index = (token_counts > token_limit).argmax()
+    #     return [{
+    #         'role': d['role'], 
+    #         'content': d['content'],
+    #     } for d in history[-token_count_index:]]
 
 
     def make_standalone_question(
@@ -82,12 +83,12 @@ class RetrievalAugmentedGenerator:
         custom_history: list[OpenAIMessageCountType] | None = None,
     ) -> tuple[str, int]:
 
-        query_length = self.history_chat_model.get_token_length(query)
+        query_length = self.history_chat_model.tokeniser.get_token_length(query)
         messages = [
             {'role': 'system', 'content': self.history_prompts[0]},
-            *self._get_allowed_history(
+            *get_allowed_history(
+                self.chat_history if custom_history is None else custom_history,
                 self.history_token_limit - query_length,
-                custom_history = custom_history,
             ),
             {'role': 'user', 'content': query},
             {'role': 'system', 'content': self.history_prompts[1]},
@@ -111,12 +112,12 @@ class RetrievalAugmentedGenerator:
         custom_history: list[OpenAIMessageCountType] | None = None,
     ) -> tuple[str, int]:
 
-        query_length = self.history_chat_model.get_token_length(query)
+        query_length = self.history_chat_model.tokeniser.get_token_length(query)
         messages = [
             {'role': 'system', 'content': self.history_prompts[0]},
-            *self._get_allowed_history(
+            *get_allowed_history(
+                self.chat_history if custom_history is None else custom_history,
                 self.history_token_limit - query_length,
-                custom_history = custom_history,
             ),
             {'role': 'user', 'content': query},
             {'role': 'system', 'content': self.history_prompts[1]},
@@ -149,7 +150,7 @@ class RetrievalAugmentedGenerator:
         custom_history: list[OpenAIMessageCountType] | None = None,
     ) -> tuple[str, int]:
 
-        query_length = self.question_chat_model.get_token_length(query)
+        query_length = self.question_chat_model.tokeniser.get_token_length(query)
         context_token_limit = self.question_token_limit - query_length - history_token_limit
         relevant_documents = self.document_scorer.get_top_k_documents(
             query = query,
@@ -165,9 +166,9 @@ class RetrievalAugmentedGenerator:
         ).get_column('content').to_list()
         messages = [
             {'role': 'system', 'content': self.question_prompts[0]},
-            *self._get_allowed_history(
-                token_limit = history_token_limit,
-                custom_history = custom_history,
+            *get_allowed_history(
+                self.chat_history if custom_history is None else custom_history,
+                history_token_limit,
             ),
             {'role': 'user', 'content': query},
             {'role': 'system', 'content': '\n\n'.join([
@@ -204,7 +205,7 @@ class RetrievalAugmentedGenerator:
         custom_history: list[OpenAIMessageCountType] | None = None,
     ) -> tuple[str, int]:
 
-        query_length = self.question_chat_model.get_token_length(query)
+        query_length = self.question_chat_model.tokeniser.get_token_length(query)
         context_token_limit = self.question_token_limit - query_length - history_token_limit
         relevant_documents = (await self.document_scorer.aget_top_k_documents(
             query = query,
@@ -220,9 +221,9 @@ class RetrievalAugmentedGenerator:
         )).get_column('content').to_list()
         messages = [
             {'role': 'system', 'content': self.question_prompts[0]},
-            *self._get_allowed_history(
-                token_limit = history_token_limit,
-                custom_history = custom_history,
+            *get_allowed_history(
+                self.chat_history if custom_history is None else custom_history,
+                history_token_limit,
             ),
             {'role': 'user', 'content': query},
             {'role': 'system', 'content': '\n\n'.join([
@@ -253,9 +254,9 @@ class RetrievalAugmentedGenerator:
     ) -> tuple[str, int]:
 
         messages = [
-            *self._get_allowed_history(
+            *get_allowed_history(
+                messages = self.chat_history if custom_history is None else custom_history,
                 token_limit = history_token_limit,
-                custom_history = custom_history,
             ),
             {
                 'role': 'system', 
@@ -288,9 +289,9 @@ class RetrievalAugmentedGenerator:
     ) -> tuple[str, int]:
 
         messages = [
-            *self._get_allowed_history(
+            *get_allowed_history(
+                messages = self.chat_history if custom_history is None else custom_history,
                 token_limit = history_token_limit,
-                custom_history = custom_history,
             ),
             {
                 'role': 'system', 

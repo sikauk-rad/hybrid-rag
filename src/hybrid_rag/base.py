@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from numbers import Number
 from pathlib import Path
 from sklearn.exceptions import NotFittedError
+from datetime import date, datetime
 
 
 class TextTransformer(ABC):
@@ -63,7 +64,7 @@ class TextTransformer(ABC):
         *args,
         **kwargs,
     ):
-        pass
+        ...
 
 
     @abstractmethod
@@ -141,15 +142,7 @@ class TextTransformer(ABC):
         ...
 
 
-class ChatModelInterface(ABC):
-
-    @abstractmethod
-    def respond():
-        ...
-
-    @abstractmethod
-    async def arespond():
-        ...
+class TokeniserInterface(ABC):
 
     @abstractmethod
     def tokenise():
@@ -157,6 +150,37 @@ class ChatModelInterface(ABC):
 
     @abstractmethod
     def tokenise_multiple():
+        ...
+
+    @abstractmethod
+    def get_token_length():
+        ...
+
+    @abstractmethod
+    def get_token_lengths():
+        ...
+
+
+class ChatModelInterface(ABC):
+
+    @abstractmethod
+    def __init__(
+        self,
+        tokeniser: TokeniserInterface,
+        token_input_limit: int,
+        base_model_name: str | None = None,
+        knowledge_cutoff_date: date | datetime | None = None,
+        *args,
+        **kwargs,
+    ) -> None:
+        ...
+
+    @abstractmethod
+    def respond():
+        ...
+
+    @abstractmethod
+    async def arespond():
         ...
 
 

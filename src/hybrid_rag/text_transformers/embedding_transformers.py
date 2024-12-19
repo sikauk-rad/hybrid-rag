@@ -65,6 +65,15 @@ class EmbeddingCache:
         self.cache[text] = embedding
 
 
+    def update(
+        self,
+        /,
+        new_items: dict[str, list[float]],
+    ) -> None:
+
+        self.cache.update(new_items)
+
+
     def remove(
         self,
         text: str,
