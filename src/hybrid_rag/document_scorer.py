@@ -84,7 +84,6 @@ class DocumentScorer:
 
     #     save_path.mkdir(parents = True, exist_ok = not fail_on_overwrite)
     #     save_path
-        
 
 
     def check_column(

@@ -217,12 +217,14 @@ class AzureChatModelInterface(ChatModelInterface):
         messages: list[OpenAIMessageCountType],
         temperature: Number = 0,
         return_token_count: bool = False,
+        message_preservation_indices: list[int] | None = None,
     ) -> tuple[str, int] | str:
 
         return self.respond(
             messages = get_allowed_history(
                 messages,
                 self.token_input_limit,
+                message_preservation_indices = message_preservation_indices,
             ),
             temperature = temperature,
             return_token_count = return_token_count,
@@ -234,12 +236,14 @@ class AzureChatModelInterface(ChatModelInterface):
         messages: list[OpenAIMessageCountType],
         temperature: Number = 0,
         return_token_count: bool = False,
+        message_preservation_indices: list[int] | None = None,
     ) -> tuple[str, int] | str:
 
         return await self.arespond(
             messages = get_allowed_history(
                 messages,
                 self.token_input_limit,
+                message_preservation_indices = message_preservation_indices,
             ),
             temperature = temperature,
             return_token_count = return_token_count,
