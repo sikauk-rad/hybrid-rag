@@ -1,5 +1,11 @@
 from .base import TextTransformer, TokeniserInterface, ChatModelInterface, EmbeddingModelInterface
-from .utilities import get_allowed_history
+from .utilities import (
+    strip_token_count,
+    strip_token_counts,
+    add_token_count,
+    add_token_counts,
+    get_allowed_history,
+)
 from .loaders import (
     load_tokeniser, 
     load_openai_clients, 
@@ -27,9 +33,14 @@ __all__ = [
     'ChatModelInterface', 
     'EmbeddingModelInterface',
 
+    'strip_token_count',
+    'strip_token_counts',
+    'add_token_count',
+    'add_token_counts',
+    'get_allowed_history',
+
     'load_openai_clients',
     'load_azure_clients',
-    'get_allowed_history',
 
     'load_tokeniser',
     'load_model_from_azure_model_details',

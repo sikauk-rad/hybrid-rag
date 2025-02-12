@@ -1,8 +1,10 @@
 from beartype import beartype
 from .datatypes import OpenAIMessageCountType, OpenAIMessageType
+from .base import TokeniserInterface
 from operator import itemgetter
 import numpy as np
 from warnings import warn
+from collections.abc import Sequence, Iterable
 
 def check_all_arguments_are_none_or_not(
     *args,
@@ -22,6 +24,7 @@ def check_all_arguments_are_none_or_not(
     return not (any(all_none) and (not all(all_none)))
 
 
+@beartype
 def strip_token_count(
     message: OpenAIMessageCountType,
 ) -> OpenAIMessageType:
@@ -29,15 +32,47 @@ def strip_token_count(
     return {key: value for key, value in message.items() if key != 'tokens'}
 
 
+@beartype
+def strip_token_counts(
+    messages: Iterable[OpenAIMessageCountType],
+) -> list[OpenAIMessageType]:
+
+    return [{
+        'role': message['role'], 
+        'content': message['content'],
+    } for message in messages]
+
+
+@beartype
+def add_token_count(
+    message: OpenAIMessageType,
+    tokeniser: TokeniserInterface,
+) -> OpenAIMessageCountType:
+
+    token_count = tokeniser.get_token_length(message['content'])
+    return message | {'tokens': token_count}
+
+
+@beartype
+def add_token_counts(
+    messages: Sequence[OpenAIMessageCountType],
+    tokeniser: TokeniserInterface,
+) -> list[OpenAIMessageCountType]:
+
+    token_counts = tokeniser.get_token_lengths([*map(itemgetter('content'), messages)])
+    return [message | {'tokens': token_count} for message, token_count in zip(
+        messages,
+        token_counts,
+    )]
+
 
 @beartype
 def get_allowed_history(
-    messages: list[OpenAIMessageCountType],
+    messages: Sequence[OpenAIMessageCountType],
     token_limit: int,
     strip_counts: bool = True,
-    message_preservation_indices: list[int] | None = None,
+    message_preservation_indices: Sequence[int] | None = None,
 ) -> list[OpenAIMessageCountType]:
-
 
     """
     Retrieve a list of messages that fit within a specified token limit.
@@ -82,8 +117,10 @@ def get_allowed_history(
         )
 
     messages_within_token_limit = itemgetter(*message_indices_within_token_limit)(messages)
+    if message_indices_within_token_limit.shape[0] < 2:
+        messages_within_token_limit = [messages_within_token_limit]
 
     if not strip_counts:
         return messages_within_token_limit
     else:
-        return [*map(strip_token_count, messages_within_token_limit)]
+        return strip_token_counts(messages_within_token_limit)

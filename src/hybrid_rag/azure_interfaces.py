@@ -11,6 +11,7 @@ from .datatypes import OpenAIMessageCountType, OpenAIMessageType
 from .utilities import get_allowed_history
 from .text_transformers.embedding_transformers import EmbeddingCache
 from datetime import date, datetime
+from collections.abc import Sequence
 
 
 @beartype
@@ -182,7 +183,7 @@ class AzureChatModelInterface(ChatModelInterface):
 
     def respond(
         self,
-        messages: list[OpenAIMessageType],
+        messages: Sequence[OpenAIMessageType],
         temperature: Number = 0,
         return_token_count: bool = False,
     ) -> tuple[str, int] | str:
@@ -198,7 +199,7 @@ class AzureChatModelInterface(ChatModelInterface):
 
     async def arespond(
         self,
-        messages: list[OpenAIMessageType],
+        messages: Sequence[OpenAIMessageType],
         temperature: Number = 0,
         return_token_count: bool = False,
     ) -> tuple[str, int] | str:
@@ -214,16 +215,17 @@ class AzureChatModelInterface(ChatModelInterface):
 
     def trim_and_respond(
         self,
-        messages: list[OpenAIMessageCountType],
+        messages: Sequence[OpenAIMessageCountType],
         temperature: Number = 0,
         return_token_count: bool = False,
-        message_preservation_indices: list[int] | None = None,
+        message_preservation_indices: Sequence[int] | None = None,
+        custom_token_limit: int | None = None,
     ) -> tuple[str, int] | str:
 
         return self.respond(
             messages = get_allowed_history(
                 messages,
-                self.token_input_limit,
+                self.token_input_limit if custom_token_limit is None else custom_token_limit,
                 message_preservation_indices = message_preservation_indices,
             ),
             temperature = temperature,
@@ -233,16 +235,17 @@ class AzureChatModelInterface(ChatModelInterface):
 
     async def atrim_and_respond(
         self,
-        messages: list[OpenAIMessageCountType],
+        messages: Sequence[OpenAIMessageCountType],
         temperature: Number = 0,
         return_token_count: bool = False,
-        message_preservation_indices: list[int] | None = None,
+        message_preservation_indices: Sequence[int] | None = None,
+        custom_token_limit: int | None = None,
     ) -> tuple[str, int] | str:
 
         return await self.arespond(
             messages = get_allowed_history(
                 messages,
-                self.token_input_limit,
+                self.token_input_limit if custom_token_limit is None else custom_token_limit,
                 message_preservation_indices = message_preservation_indices,
             ),
             temperature = temperature,
