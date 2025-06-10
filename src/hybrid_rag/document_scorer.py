@@ -6,7 +6,7 @@ from polars.datatypes.classes import DataTypeClass
 import numpy as np
 from typing import Any
 from beartype import beartype
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from asyncio import gather
 from numbers import Number
 from numpy.typing import NDArray
@@ -21,14 +21,14 @@ class DocumentScorer:
 
     def __init__(
         self,
-        documents: list[str],
-        document_sizes: list[int] | NDArray[np.integer],
+        documents: Sequence[str],
+        document_sizes: Sequence[int] | NDArray[np.integer],
         transformers: dict[str, TextTransformer],
         *,
         rank_weights: dict[str, Number] = {},
         transform_arguments: dict[str, dict[str, Any]] = {},
         score_arguments: dict[str, dict[str, Any]] = {},
-        metadata: dict[str, list[str | Number]] = {},
+        metadata: dict[str, Sequence[str | Number]] = {},
         reranker_name: str = 'ms-marco-MiniLM-L-6-v2',
     ) -> None:
 

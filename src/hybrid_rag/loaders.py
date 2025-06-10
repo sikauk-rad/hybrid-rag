@@ -124,6 +124,7 @@ def load_model_from_azure_model_details(
     async_client: AsyncAzureOpenAI,
     azure_model_details: AzureChatModelDetails | AzureEmbeddingModelDetails,
     huggingface_token: str | None = None,
+    max_cache_size: int = 100_000,
 ) -> AzureChatModelInterface | AzureEmbeddingModelInterface:
 
     match azure_model_details.function:
@@ -135,7 +136,7 @@ def load_model_from_azure_model_details(
                 base_model_name = azure_model_details.base_model_name,
                 cache = EmbeddingCache(
                     cache = {},
-                    max_size = 1_000,
+                    max_size = max_cache_size,
                     model_name = azure_model_details.base_model_name,
                 ),
             )

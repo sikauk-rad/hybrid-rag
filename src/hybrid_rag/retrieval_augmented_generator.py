@@ -1,6 +1,7 @@
 import polars as pl
 import numpy as np
 from typing import Literal
+from collections.abc import Sequence
 from beartype import beartype
 from collections.abc import Iterable
 from numbers import Number
@@ -56,8 +57,8 @@ class RetrievalAugmentedGenerator:
     # def _get_allowed_history(
     #     self,
     #     token_limit: int,
-    #     custom_history: list[OpenAIMessageCountType] | None = None,
-    # ) -> list[OpenAIMessageType]:
+    #     custom_history: Sequence[OpenAIMessageCountType] | None = None,
+    # ) -> Sequence[OpenAIMessageType]:
 
     #     if custom_history is None:
     #         history = self.chat_history
@@ -80,7 +81,7 @@ class RetrievalAugmentedGenerator:
         self,
         query: str,
         temperature: Number,
-        custom_history: list[OpenAIMessageCountType] | None = None,
+        custom_history: Sequence[OpenAIMessageCountType] | None = None,
     ) -> tuple[str, int]:
 
         query_length = self.history_chat_model.tokeniser.get_token_length(query)
@@ -109,7 +110,7 @@ class RetrievalAugmentedGenerator:
         self,
         query: str,
         temperature: Number,
-        custom_history: list[OpenAIMessageCountType] | None = None,
+        custom_history: Sequence[OpenAIMessageCountType] | None = None,
     ) -> tuple[str, int]:
 
         query_length = self.history_chat_model.tokeniser.get_token_length(query)
@@ -147,7 +148,7 @@ class RetrievalAugmentedGenerator:
         rerank_score_threshold: Number,
         filters: Iterable[pl.Expr] = [],
         verbose: bool = False,
-        custom_history: list[OpenAIMessageCountType] | None = None,
+        custom_history: Sequence[OpenAIMessageCountType] | None = None,
     ) -> tuple[str, int]:
 
         query_length = self.question_chat_model.tokeniser.get_token_length(query)
@@ -202,7 +203,7 @@ class RetrievalAugmentedGenerator:
         rerank_score_threshold: Number,
         filters: Iterable[pl.Expr] = [],
         verbose: bool = False,
-        custom_history: list[OpenAIMessageCountType] | None = None,
+        custom_history: Sequence[OpenAIMessageCountType] | None = None,
     ) -> tuple[str, int]:
 
         query_length = self.question_chat_model.tokeniser.get_token_length(query)
@@ -250,7 +251,7 @@ class RetrievalAugmentedGenerator:
         target_language: str,
         temperature: Number,
         history_token_limit: int,
-        custom_history: list[OpenAIMessageCountType] | None = None,
+        custom_history: Sequence[OpenAIMessageCountType] | None = None,
     ) -> tuple[str, int]:
 
         messages = [
@@ -285,7 +286,7 @@ class RetrievalAugmentedGenerator:
         target_language: str,
         temperature: Number,
         history_token_limit: int,
-        custom_history: list[OpenAIMessageType] | None = None,
+        custom_history: Sequence[OpenAIMessageCountType] | None = None,
     ) -> tuple[str, int]:
 
         messages = [
@@ -318,10 +319,10 @@ class RetrievalAugmentedGenerator:
         self,
         query: str,
         history_model_temperature: Number = 0,
-        history_model_custom_history:  list[OpenAIMessageType] | None = None,
+        history_model_custom_history:  Sequence[OpenAIMessageCountType] | None = None,
         question_model_temperature: Number = 0,
         question_model_history_token_limit: int = 1_000,
-        question_model_custom_history:  list[OpenAIMessageType] | None = None,
+        question_model_custom_history:  Sequence[OpenAIMessageCountType] | None = None,
         n_documents: int = 50,
         initial_retrieval_ratio: Number = 2., 
         fusion_factor: Number = 1,
@@ -332,7 +333,7 @@ class RetrievalAugmentedGenerator:
         process_model_target_language: str = 'British English',
         process_model_temperature: Number = 0,
         process_model_history_token_limit: int = 0,
-        process_model_custom_history:  list[OpenAIMessageType] | None = None,
+        process_model_custom_history:  Sequence[OpenAIMessageCountType] | None = None,
         return_token_count: bool = False,
         verbose: bool = False,
     ) -> str | tuple[str, int]:
@@ -385,10 +386,10 @@ class RetrievalAugmentedGenerator:
         self,
         query: str,
         history_model_temperature: Number = 0,
-        history_model_custom_history:  list[OpenAIMessageType] | None = None,
+        history_model_custom_history:  Sequence[OpenAIMessageCountType] | None = None,
         question_model_temperature: Number = 0,
         question_model_history_token_limit: int = 1_000,
-        question_model_custom_history:  list[OpenAIMessageType] | None = None,
+        question_model_custom_history:  Sequence[OpenAIMessageCountType] | None = None,
         n_documents: int = 50,
         initial_retrieval_ratio: Number = 2., 
         fusion_factor: Number = 1,
@@ -399,7 +400,7 @@ class RetrievalAugmentedGenerator:
         process_model_target_language: str = 'British English',
         process_model_temperature: Number = 0,
         process_model_history_token_limit: int = 0,
-        process_model_custom_history:  list[OpenAIMessageType] | None = None,
+        process_model_custom_history:  Sequence[OpenAIMessageCountType] | None = None,
         return_token_count: bool = False,
         verbose: bool = False,
     ) -> str | tuple[str, int]:

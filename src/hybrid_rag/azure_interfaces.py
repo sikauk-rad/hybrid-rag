@@ -3,7 +3,9 @@ from openai import OpenAI, AsyncOpenAI, AzureOpenAI, AsyncAzureOpenAI
 from openai._exceptions import RateLimitError, BadRequestError
 from beartype import beartype
 from tqdm.asyncio import tqdm_asyncio
+from tqdm import tqdm
 from asyncio import sleep as asleep
+from asyncio import Semaphore
 from time import sleep
 from numbers import Number
 from .base import EmbeddingModelInterface, ChatModelInterface, TokeniserInterface
@@ -24,6 +26,7 @@ class AzureEmbeddingModelInterface(EmbeddingModelInterface):
         model_name: str,
         cache: EmbeddingCache,
         base_model_name: str | None = None,
+        max_concurrent_requests: int = 100,
     ) -> None:
 
         self.sync_client = sync_client
@@ -33,6 +36,7 @@ class AzureEmbeddingModelInterface(EmbeddingModelInterface):
         self.base_model_name = base_model_name
         self.bad_requests = []
         self.function = 'embedding'
+        self.max_concurrent_requests = max_concurrent_requests
 
 
     def update_cache(
@@ -104,7 +108,7 @@ class AzureEmbeddingModelInterface(EmbeddingModelInterface):
 
     def transform_multiple(
         self,
-        texts: list[str],
+        texts: Sequence[str],
         n_retries: int = 100,
         save_path: Path | None = None,
         fail_on_overwrite: bool = True,
@@ -114,7 +118,12 @@ class AzureEmbeddingModelInterface(EmbeddingModelInterface):
             embeddings = [self.transform(
                 text = text,
                 n_retries = n_retries,
-            ) for text in texts]
+            ) for text in tqdm(
+                texts,
+                position = 0,
+                leave = True,
+                desc = f'embedding with {self.base_model_name}'
+            )]
 
         finally:
             if save_path:
@@ -125,24 +134,24 @@ class AzureEmbeddingModelInterface(EmbeddingModelInterface):
 
     async def atransform_multiple(
         self,
-        texts: list[str],
+        texts: Sequence[str],
         n_retries: int = 100,
         save_path: Path | None = None,
         fail_on_overwrite: bool = True,
     ) -> list[list[float]]:
 
-
         try:
-            coroutines = [self.atransform(
-                text = text,
-                n_retries = n_retries,
-            ) for text in texts]
-            embeddings = await tqdm_asyncio.gather(
-                *coroutines,
-                position = 0,
-                leave = True,
-                desc = f'embedding with {self.base_model_name}'
-            )
+            async with Semaphore(self.max_concurrent_requests):
+                coroutines = [self.atransform(
+                    text = text,
+                    n_retries = n_retries,
+                ) for text in texts]
+                embeddings = await tqdm_asyncio.gather(
+                    *coroutines,
+                    position = 0,
+                    leave = True,
+                    desc = f'embedding with {self.base_model_name}'
+                )
 
         finally:
             if save_path:

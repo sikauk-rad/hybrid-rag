@@ -2,6 +2,7 @@ from tiktoken import get_encoding
 from typing import Literal
 from beartype import beartype
 import numpy as np
+from collections.abc import Sequence
 from numpy.typing import NDArray
 from .base import TokeniserInterface
 from transformers import AutoTokenizer
@@ -35,7 +36,7 @@ class OpenAITokeniserInterface(TokeniserInterface):
 
     def tokenise_multiple(
         self,
-        texts: list[str],
+        texts: Sequence[str],
     ) -> NDArray[np.integer] | list[list[int]]:
 
         return self.tokeniser.encode_batch(texts)
@@ -51,7 +52,7 @@ class OpenAITokeniserInterface(TokeniserInterface):
 
     def get_token_lengths(
         self,
-        texts: list[str],
+        texts: Sequence[str],
     ) -> list[int]:
 
         return [*map(len, self.tokeniser.encode_batch(texts))]
@@ -83,7 +84,7 @@ class HuggingFaceTokeniserInterface(TokeniserInterface):
 
     def tokenise_multiple(
         self,
-        texts: list[str],
+        texts: Sequence[str],
     ) -> NDArray[np.integer] | list[list[int]]:
 
         return [*map(self.tokeniser.encode, texts)]
@@ -99,7 +100,7 @@ class HuggingFaceTokeniserInterface(TokeniserInterface):
 
     def get_token_lengths(
         self,
-        texts: list[str],
+        texts: Sequence[str],
     ) -> list[int]:
 
         return [len(self.tokeniser.encode(text)) for text in texts]

@@ -3,7 +3,7 @@ import numpy as np
 import operator as op
 from typing import Literal, Self
 from beartype import beartype
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from numbers import Number
@@ -19,7 +19,7 @@ from Stemmer import Stemmer
 from scipy.sparse import csr_array, sparray, coo_array, save_npz, load_npz#, lil_array
 # import bm25s
 from ..base import TextTransformer
-from ..utilities import check_all_arguments_are_none_or_not
+from ..utilities import check_all_arguments_are_none_or_not, get_optimal_uintype
 import orjson as json
 
 
@@ -48,7 +48,7 @@ class TextTDFIF(TextTransformer):
 
     def fit_transform(
         self,
-        texts: list[str],
+        texts: Sequence[str],
     ) -> NDArray[np.floating]:
 
         self.text_encodings = self.model.fit_transform(texts).toarray()
@@ -58,7 +58,7 @@ class TextTDFIF(TextTransformer):
 
     async def afit_transform(
         self,
-        texts: list[str],
+        texts: Sequence[str],
     ) -> NDArray[np.floating]:
 
         return self.fit_transform(texts)
@@ -66,7 +66,7 @@ class TextTDFIF(TextTransformer):
 
     def fit(
         self,
-        texts: list[str],
+        texts: Sequence[str],
     ) -> Self:
 
         self.fit_transform(texts)
@@ -75,7 +75,7 @@ class TextTDFIF(TextTransformer):
 
     async def afit(
         self,
-        texts: list[str],
+        texts: Sequence[str],
     ) -> Self:
 
         self.fit_transform(texts)
@@ -101,7 +101,7 @@ class TextTDFIF(TextTransformer):
 
     def transform_multiple(
         self,
-        texts: list[str],
+        texts: Sequence[str],
     ) -> NDArray[np.floating]:
 
         self._check_fit()
@@ -110,7 +110,7 @@ class TextTDFIF(TextTransformer):
 
     async def atransform_multiple(
         self,
-        texts: list[str],
+        texts: Sequence[str],
     ) -> NDArray[np.floating]:
 
         return self.transform_multiple(texts)
@@ -1121,7 +1121,7 @@ class TextBM25(TextTransformer):
         NDArray[np.float32],
     ]:
 
-        document_frequencies = (term_frequencies > 0).sum(axis = 0).astype('int64')
+        document_frequencies = (term_frequencies > 0).sum(axis = 0).astype('uint64')
         document_lengths = term_frequencies.sum(axis = 1).astype('float32')
         document_lengths /= document_lengths.mean(dtype = 'float32')
         return document_frequencies, document_lengths
@@ -1254,52 +1254,22 @@ class TextBM25(TextTransformer):
 
     def tokenise_multiple(
         self,
-        texts: list[str],
-    ) -> list[list[str]]:
+        texts: Sequence[str],
+        as_lazyframe: bool = False,
+    ) -> list[list[str]] | pl.LazyFrame:
 
-        texts = pl.Series(
-            'text',
-            texts,
-            dtype = pl.String,
-        )
-        if self.lowercase:
-            texts = texts.str.to_lowercase()
-        if self._normaliser:
-            texts = texts.map_elements(
-                self._normaliser.normalize_str,
-                return_dtype = pl.String,
-            )
-        tokens = texts.str.extract_all(
-            self.find_pattern.pattern,
-        ).list.set_difference(
-            self.stop_words
-        )
-        if self.stemmer:
-            tokens = tokens.map_elements(
-                self.stemmer.stemWords,
-                return_dtype = pl.List(pl.String),
-            ).list.set_difference(
-                self.stop_words,
-            )
-        return tokens.to_list()
-
-
-    def fit_transform(
-        self,
-        texts: list[str],
-    ) -> tuple[csr_array, dict[str, int]]:
-
-        texts_frame = pl.DataFrame(
-            [texts], 
-            schema = {'text': pl.String}
+        texts_frame = pl.LazyFrame(
+            [texts],
+            schema = {'text': pl.String},
         ).with_row_index(
-            name = '_index'
+            name = 'index'
         )
 
         if self.lowercase:
             texts_frame = texts_frame.with_columns(
                 pl.col('text').str.to_lowercase()
             )
+
         if self._normaliser:
             texts_frame = texts_frame.with_columns(
                 pl.col('text').map_elements(
@@ -1307,48 +1277,132 @@ class TextBM25(TextTransformer):
                     return_dtype = pl.String,
                 )
             )
+
         tokens_frame = texts_frame.with_columns(
             pl.col('text').str.extract_all(
                 self.find_pattern.pattern,
-            ).list.set_difference(
-                self.stop_words
             )
+        ).explode(
+            'text'
+        ).with_columns(
+            pl.col(
+                'text'
+            ).str.strip_chars()
         )
+
+        if self.stop_words:
+            tokens_frame = tokens_frame.filter(
+                pl.col(
+                    'text'
+                ).is_in(
+                    self.stop_words
+                ).not_()
+            )
+
+        tokens_frame = tokens_frame.group_by(
+            'text',
+            maintain_order = True,
+        ).agg(
+            'index'
+        )
+
         if self.stemmer:
             tokens_frame = tokens_frame.with_columns(
-                pl.col('text').map_elements(
-                    self.stemmer.stemWords,
-                    return_dtype = pl.List(pl.String),
-                ).list.set_difference(
-                    self.stop_words,
-                )
+            pl.col(
+                'text'
+            ).map_elements(
+                self.stemmer.stemWord,
+                return_dtype = pl.String,
             )
-
-        tokens_flat = tokens_frame.explode(
-            'text'
-        ).group_by(
-            '_index',
-            'text',
-        ).len(
-            name = 'count',
-        ).sort(
-            by = (
-                '_index',
-                'text',
-            ),
-        ).pivot(
-            on = 'text',
-            values = 'count',
-            index = '_index',
-        ).drop(
-            '_index'
         )
-        self.token_map = {k: n for n,k in enumerate(tokens_flat.columns)}
+            if self.stop_words:
+                tokens_frame = tokens_frame.filter(
+                    pl.col(
+                        'text'
+                    ).is_in(
+                        self.stop_words
+                    ).not_(),
+                )
+
+        tokens_frame = tokens_frame.filter(
+            pl.col(
+                'text'
+            ).str.replace_all(
+                '[^A-z0-9]',
+                '',
+            ).str.len_chars().gt(
+                0
+            )
+        )
+
+        if as_lazyframe:
+            return tokens_frame
+        else:
+            return tokens_frame.explode(
+                'index'
+            ).group_by(
+                'index',
+                maintain_order = False,
+            ).agg(
+                'text'
+            ).select(
+                'text',
+            ).collect()[:,0].to_list()
+
+
+    def fit_transform(
+        self,
+        texts: Sequence[str],
+    ) -> tuple[csr_array, dict[str, int]]:
+
+        tokens_frame = self.tokenise_multiple(
+            texts,
+            as_lazyframe = True,
+        ).select(
+            'text',
+            pl.col(
+                'index'
+            ).list.eval(
+                pl.element().value_counts()
+            )
+        ).with_row_index(
+            'column'
+        )
+
+        self.token_map = dict(tokens_frame.select(
+            'text',
+            'column',
+        ).collect().rows())
+
+        term_frequencies = tokens_frame.explode(
+            'index'
+        ).select(
+            pl.col(
+                'index'
+            ).struct.field(
+                'count'
+            ),
+            pl.col(
+                'index'
+            ).struct.field(
+                ''
+            ),
+            pl.col(
+                'column',
+            ),
+        ).collect().to_numpy()
+
+        self.count_dtype = get_optimal_uintype(term_frequencies[:,0].max())
 
         term_frequencies = csr_array(
-            tokens_flat.select(pl.all().fill_null(0)).to_numpy(),
-            shape = tokens_flat.shape,
-            dtype = 'int32',
+            (
+                term_frequencies[:,0],
+                (
+                    term_frequencies[:,1],
+                    term_frequencies[:,2],
+                ),
+            ),
+            dtype = self.count_dtype,
         )
 
         self.document_frequencies, self.document_lengths = self.calculate_document_attributes(
@@ -1369,7 +1423,7 @@ class TextBM25(TextTransformer):
 
     def fit(
         self,
-        texts: list[str],
+        texts: Sequence[str],
     ) -> Self:
 
         self.fit_transform(texts)
@@ -1378,7 +1432,7 @@ class TextBM25(TextTransformer):
 
     async def afit_transform(
         self,
-        texts: list[str],
+        texts: Sequence[str],
     ) -> Self:
 
         return self.fit_transform(texts)
@@ -1386,7 +1440,7 @@ class TextBM25(TextTransformer):
 
     async def afit(
         self,
-        texts: list[str],
+        texts: Sequence[str],
     ) -> Self:
 
         return self.fit(texts)
@@ -1396,7 +1450,7 @@ class TextBM25(TextTransformer):
         self,
         text: str,
         token_map: dict[str, int] | None = None,
-    ) -> NDArray[np.int64]:
+    ) -> NDArray[np.uint64]:
 
         text_tokenised = self.tokenise(text)
         text_token_counter = Counter(text_tokenised)
@@ -1404,13 +1458,15 @@ class TextBM25(TextTransformer):
         token_map = self.token_map if token_map is None else token_map
         token_intersection = text_token_counter.keys() & token_map.keys()
         if not token_intersection:
-            return np.array([], dtype = 'int64')
+            return np.array([], dtype = 'uint64')
         fetcher = op.itemgetter(*token_intersection)
 
         return np.array(
             fetcher(token_map), 
-            dtype = 'int64',
-        ).repeat(fetcher(text_token_counter))
+            dtype = 'uint64',
+        ).repeat(
+            fetcher(text_token_counter)
+        )
 
 
     async def atransform(
@@ -1424,19 +1480,56 @@ class TextBM25(TextTransformer):
 
     def transform_multiple(
         self,
-        texts: list[str],
+        texts: Sequence[str],
         token_map: dict[str, int] | None = None,
-    ) -> list[NDArray[np.int64]]:
+    ) -> list[NDArray[np.int64]]  | list[list[int]]:
 
-        token_arrays = []
-        for text in self.tokenise_multiple(texts):
-            token_arrays.append(self.transform(text, token_map))
-        return token_arrays
+        tokenised = self.tokenise_multiple(texts, as_lazyframe = True)
+        token_map = self.token_map if token_map is None else token_map
+
+        transformed = (
+            tokenised
+            .filter(
+                pl.col(
+                    'text'
+                ).is_in(
+                    token_map.keys()
+                )
+            )
+            .with_columns(
+                pl.col(
+                    'text'
+                ).replace_strict(
+                    token_map,
+                    return_dtype = pl.UInt64,
+                    default = None,
+                )
+            )
+            .explode(
+                'index'
+            )
+            .group_by(
+                'index'
+            )
+            .agg(
+                'text'
+            )
+            .sort(
+                by = 'index'
+            )
+            .select(
+                'text'
+            )
+            .collect()
+            [:,0]
+            .to_list()
+        )
+        return transformed
 
 
     async def atransform_multiple(
         self,
-        texts: list[str],
+        texts: Sequence[str],
         token_map: dict[str, int] | None = None,
     )-> list[NDArray[np.int64]]:
 

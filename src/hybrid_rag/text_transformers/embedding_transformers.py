@@ -4,7 +4,7 @@ import numpy as np
 import orjson as json
 from typing import Self
 from beartype import beartype
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from sklearn.metrics.pairwise import cosine_similarity
 from numbers import Number
 from dataclasses import dataclass
@@ -24,7 +24,7 @@ class EmbeddingCache:
     This class allows storing, retrieving, and managing text embeddings.
     """
 
-    cache: dict[str, list[float]]
+    cache: dict[str, Sequence[float]]
     max_size: int
     model_name: str
 
@@ -51,7 +51,7 @@ class EmbeddingCache:
     def add(
         self,
         text: str,
-        embedding: list[float] | NDArray[np.floating],
+        embedding: Sequence[float] | NDArray[np.floating],
     ) -> None:
 
         """
@@ -68,7 +68,7 @@ class EmbeddingCache:
     def update(
         self,
         /,
-        new_items: dict[str, list[float]],
+        new_items: dict[str, Sequence[float]],
     ) -> None:
 
         self.cache.update(new_items)
@@ -221,7 +221,7 @@ class TextEmbedder(TextTransformer):
 
     def fit_transform(
         self,
-        texts: list[str],
+        texts: Sequence[str],
         n_retries: int = 100,
         save_path: Path | None = None,
         fail_on_overwrite: bool = True,
@@ -251,7 +251,7 @@ class TextEmbedder(TextTransformer):
 
     def fit(
         self,
-        texts: list[str],
+        texts: Sequence[str],
         n_retries: int = 100,
         save_path: Path | None = None,
         fail_on_overwrite: bool = True,
@@ -270,7 +270,7 @@ class TextEmbedder(TextTransformer):
 
     async def afit_transform(
         self,
-        texts: list[str],
+        texts: Sequence[str],
         n_retries: int = 100,
         save_path: Path | None = None,
         fail_on_overwrite: bool = True,
@@ -300,7 +300,7 @@ class TextEmbedder(TextTransformer):
 
     async def afit(
         self,
-        texts: list[str],
+        texts: Sequence[str],
         n_retries: int = 100,
         save_path: Path | None = None,
         fail_on_overwrite: bool = True,
@@ -342,7 +342,7 @@ class TextEmbedder(TextTransformer):
 
     def transform_multiple(
         self, 
-        texts: list[str], 
+        texts: Sequence[str], 
         n_retries: int = 100,
         save_path: Path | None = None,
         fail_on_overwrite: bool = True,
@@ -358,7 +358,7 @@ class TextEmbedder(TextTransformer):
 
     async def atransform_multiple(
         self, 
-        texts: list[str], 
+        texts: Sequence[str], 
         n_retries: int = 100,
         save_path: Path | None = None,
         fail_on_overwrite: bool = True,

@@ -5,6 +5,8 @@ from operator import itemgetter
 import numpy as np
 from warnings import warn
 from collections.abc import Sequence, Iterable
+from numbers import Number
+from typing import Literal
 
 def check_all_arguments_are_none_or_not(
     *args,
@@ -22,6 +24,25 @@ def check_all_arguments_are_none_or_not(
 
     all_none = [arg is None for arg in args]
     return not (any(all_none) and (not all(all_none)))
+
+
+@beartype
+def get_optimal_uintype(
+    number: Number,
+) -> Literal['uint8', 'uint16', 'uint32', 'uint64', 'float32', 'float64']:
+
+    if number < 255:
+        return 'uint8'
+    elif number < 65535:
+        return 'uint16'
+    elif number < 4294967295:
+        return 'uint32'
+    elif number < 18446744073709551615:
+        return 'uint64'
+    elif number <= 3.4028235e+38:
+        return 'float32'
+    else:
+        return 'float64'
 
 
 @beartype
@@ -95,12 +116,12 @@ def get_allowed_history(
         dtype = 'int64',
         count = n_messages,
     )
-    message_indices = np.arange(token_counts.shape[0], dtype = 'int64')
+    message_indices = np.arange(n_messages, dtype = 'int64')
 
     if message_preservation_indices:
         message_indices_ordered_by_priority = np.append(
             message_preservation_indices,
-            np.delete(message_indices, message_preservation_indices)[::-1],
+            values=np.delete(message_indices, message_preservation_indices)[::-1],
         )
     else:
         message_indices_ordered_by_priority = message_indices[::-1]
@@ -109,7 +130,11 @@ def get_allowed_history(
     within_token_limit_mask = token_counts_ordered_by_priority.cumsum() <= token_limit
     message_indices_within_token_limit = message_indices_ordered_by_priority[within_token_limit_mask]
     message_indices_within_token_limit.sort()
-    if message_indices_within_token_limit[-1] != (n_messages - 1):
+
+    if not message_indices_within_token_limit.size:
+        return []
+
+    elif message_indices_within_token_limit[-1] != (n_messages - 1):
         warn(
             'preserved messages are larger than token limit. Last user message not '\
             'sent to chat model.',
