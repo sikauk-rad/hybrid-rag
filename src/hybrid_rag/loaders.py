@@ -194,7 +194,7 @@ def load_clients_and_models_from_azure_model_details(
 
 @beartype
 def load_clients_and_models_from_dicts(
-    model_details: list[dict],
+    model_details: Iterable[dict],
     huggingface_token: str | None = None,
 ) -> tuple[list[AzureOpenAI], list[AsyncAzureOpenAI], list[AzureEmbeddingModelInterface | AzureChatModelInterface]]:
 
