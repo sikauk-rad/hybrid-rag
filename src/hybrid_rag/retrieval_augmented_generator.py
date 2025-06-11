@@ -10,6 +10,12 @@ from .document_scorer import DocumentScorer
 from operator import itemgetter
 from .datatypes import OpenAIMessageType, OpenAIMessageCountType
 from .utilities import get_allowed_history
+from pydantic import BaseModel
+
+
+class StandaloneResponseStructure(BaseModel):
+    augmented_standalone_user_query: str
+    user_query_requires_additional_context_to_answer: bool
 
 
 @beartype
@@ -23,7 +29,8 @@ class RetrievalAugmentedGenerator:
         process_chat_model: ChatModelInterface,
         document_scorer: DocumentScorer,
         history_prompts: tuple[str, str],
-        question_prompts: tuple[str, str, str],
+        question_prompts_rag: tuple[str, str, str],
+        question_prompts_no_rag: tuple[str, str],
         process_prompts: tuple[str, str],
     ) -> None:
 
@@ -32,7 +39,8 @@ class RetrievalAugmentedGenerator:
         self.process_chat_model = process_chat_model
         self.document_scorer = document_scorer
         self.history_prompts = history_prompts
-        self.question_prompts = question_prompts
+        self.question_prompts_rag = question_prompts_rag
+        self.question_prompts_no_rag = question_prompts_no_rag
         self.process_prompts = process_prompts
 
         self.history_token_limit = (
@@ -45,7 +53,10 @@ class RetrievalAugmentedGenerator:
         self.question_token_limit = (
             self.question_chat_model.token_input_limit
             -
-            self.question_chat_model.tokeniser.get_token_length('\n'.join(self.question_prompts))
+            max(
+                self.question_chat_model.tokeniser.get_token_length('\n'.join(self.question_prompts_rag)),
+                self.question_chat_model.tokeniser.get_token_length('\n'.join(self.question_prompts_no_rag)),
+            )
             -
             10
         )
@@ -82,7 +93,10 @@ class RetrievalAugmentedGenerator:
         query: str,
         temperature: Number,
         custom_history: Sequence[OpenAIMessageCountType] | None = None,
-    ) -> tuple[str, int]:
+        use_structured_response: bool = True,
+    ) -> tuple[str, bool, int]:
+
+        use_structured_response = use_structured_response and self.history_chat_model.supports_structured
 
         query_length = self.history_chat_model.tokeniser.get_token_length(query)
         messages = [
@@ -94,16 +108,31 @@ class RetrievalAugmentedGenerator:
             {'role': 'user', 'content': query},
             {'role': 'system', 'content': self.history_prompts[1]},
         ]
-        response, token_count = self.history_chat_model.respond(
-            messages = messages,
-            temperature = temperature,
-            return_token_count = True,
-        )
-        self.interaction_history.append(([*messages, {
+
+        if use_structured_response:
+            response, token_count = self.history_chat_model.respond_structured(
+                messages = messages,
+                response_format = StandaloneResponseStructure,
+                temperature = temperature,
+                return_token_count = True,
+            )
+            requires_rag = response.user_query_requires_additional_context_to_answer
+            response = response.augmented_standalone_user_query
+
+        else:
+            response, token_count = self.history_chat_model.respond(
+                messages = messages,
+                response_format = StandaloneResponseStructure,
+                temperature = temperature,
+                return_token_count = True,
+            )
+            requires_rag = True
+
+        self.interaction_history.append([*messages, {
             'role': 'assistant',
             'content': response,
-        }]))
-        return (response, query_length)
+        }])
+        return (response, requires_rag, query_length)
 
 
     async def amake_standalone_question(
@@ -111,7 +140,10 @@ class RetrievalAugmentedGenerator:
         query: str,
         temperature: Number,
         custom_history: Sequence[OpenAIMessageCountType] | None = None,
-    ) -> tuple[str, int]:
+        use_structured_response: bool = True,
+    ) -> tuple[str, bool, int]:
+
+        use_structured_response = use_structured_response and self.history_chat_model.supports_structured
 
         query_length = self.history_chat_model.tokeniser.get_token_length(query)
         messages = [
@@ -123,16 +155,31 @@ class RetrievalAugmentedGenerator:
             {'role': 'user', 'content': query},
             {'role': 'system', 'content': self.history_prompts[1]},
         ]
-        response, token_count = await self.history_chat_model.arespond(
-            messages = messages,
-            temperature = temperature,
-            return_token_count = True,
-        )
-        self.interaction_history.append(([*messages, {
+
+        if use_structured_response:
+            response, token_count = await self.history_chat_model.arespond_structured(
+                messages = messages,
+                response_format = StandaloneResponseStructure,
+                temperature = temperature,
+                return_token_count = True,
+            )
+            requires_rag = response.user_query_requires_additional_context_to_answer
+            response = response.augmented_standalone_user_query
+
+        else:
+            response, token_count = await self.history_chat_model.respond(
+                messages = messages,
+                response_format = StandaloneResponseStructure,
+                temperature = temperature,
+                return_token_count = True,
+            )
+            requires_rag = True
+
+        self.interaction_history.append([*messages, {
             'role': 'assistant',
             'content': response,
-        }]))
-        return (response, query_length)
+        }])
+        return (response, requires_rag, query_length)
 
 
     def respond_to_standalone_question(
@@ -166,16 +213,16 @@ class RetrievalAugmentedGenerator:
             verbose = verbose,
         ).get_column('content').to_list()
         messages = [
-            {'role': 'system', 'content': self.question_prompts[0]},
+            {'role': 'system', 'content': self.question_prompts_rag[0]},
             *get_allowed_history(
                 self.chat_history if custom_history is None else custom_history,
                 history_token_limit,
             ),
             {'role': 'user', 'content': query},
             {'role': 'system', 'content': '\n\n'.join([
-                self.question_prompts[1],
+                self.question_prompts_rag[1],
                 *[f'DOCUMENT {n}:\n{text}' for n, text in enumerate(relevant_documents, 1)],
-                self.question_prompts[2],
+                self.question_prompts_rag[2],
             ])},
         ]
         response, token_count = self.question_chat_model.respond(
@@ -221,17 +268,75 @@ class RetrievalAugmentedGenerator:
             verbose = verbose,
         )).get_column('content').to_list()
         messages = [
-            {'role': 'system', 'content': self.question_prompts[0]},
+            {'role': 'system', 'content': self.question_prompts_rag[0]},
             *get_allowed_history(
                 self.chat_history if custom_history is None else custom_history,
                 history_token_limit,
             ),
             {'role': 'user', 'content': query},
             {'role': 'system', 'content': '\n\n'.join([
-                self.question_prompts[1],
+                self.question_prompts_rag[1],
                 *[f'DOCUMENT {n}:\n{text}' for n, text in enumerate(relevant_documents, 1)],
-                self.question_prompts[2],
+                self.question_prompts_rag[2],
             ])},
+        ]
+        response, token_count = await self.question_chat_model.arespond(
+            messages = messages,
+            temperature = temperature,
+            return_token_count = True,
+        )
+        self.interaction_history.append(([*messages, {
+            'role': 'assistant',
+            'content': response,
+        }]))
+        return (response, token_count)
+
+
+    def respond_to_standalone_question_norag(
+        self,
+        query: str,
+        temperature: Number,
+        history_token_limit: int,
+        custom_history: Sequence[OpenAIMessageCountType] | None = None,
+    ) -> tuple[str, int]:
+
+        messages = [
+            {'role': 'system', 'content': self.question_prompts_no_rag[0]},
+            *get_allowed_history(
+                messages=self.chat_history if custom_history is None else custom_history,
+                token_limit=history_token_limit,
+            ),
+            {'role': 'user', 'content': query},
+            {'role': 'system', 'content': self.question_prompts_no_rag[1]},
+        ]
+        response, token_count = self.question_chat_model.respond(
+            messages = messages,
+            temperature = temperature,
+            return_token_count = True,
+        )
+        self.interaction_history.append(([*messages, {
+            'role': 'assistant',
+            'content': response,
+        }]))
+        return (response, token_count)
+
+
+    async def arespond_to_standalone_question_norag(
+        self,
+        query: str,
+        temperature: Number,
+        history_token_limit: int,
+        custom_history: Sequence[OpenAIMessageCountType] | None = None,
+    ) -> tuple[str, int]:
+
+        messages = [
+            {'role': 'system', 'content': self.question_prompts_no_rag[0]},
+            *get_allowed_history(
+                messages=self.chat_history if custom_history is None else custom_history,
+                token_limit=history_token_limit,
+            ),
+            {'role': 'user', 'content': query},
+            {'role': 'system', 'content': self.question_prompts_no_rag[1]},
         ]
         response, token_count = await self.question_chat_model.arespond(
             messages = messages,
@@ -320,6 +425,7 @@ class RetrievalAugmentedGenerator:
         query: str,
         history_model_temperature: Number = 0,
         history_model_custom_history:  Sequence[OpenAIMessageCountType] | None = None,
+        history_model_structured_response: bool = True,
         question_model_temperature: Number = 0,
         question_model_history_token_limit: int = 1_000,
         question_model_custom_history:  Sequence[OpenAIMessageCountType] | None = None,
@@ -338,28 +444,39 @@ class RetrievalAugmentedGenerator:
         verbose: bool = False,
     ) -> str | tuple[str, int]:
 
-        standalone_query, query_length = self.make_standalone_question(
+        standalone_query, requires_rag, query_length = self.make_standalone_question(
             query,
             temperature = history_model_temperature,
             custom_history = history_model_custom_history,
+            use_structured_response = history_model_structured_response,
         )
         if verbose:
             print(f'initial query: {query}')
             print(f'standalone question: {standalone_query}')
-        response, token_count = self.respond_to_standalone_question(
-            standalone_query,
-            temperature = question_model_temperature,
-            n_documents = n_documents,
-            initial_retrieval_ratio = initial_retrieval_ratio,
-            fusion_factor = fusion_factor,
-            weighted_rank_threshold = weighted_rank_threshold,
-            filters = filters,
-            rerank = rerank,
-            rerank_score_threshold = rerank_score_threshold,
-            history_token_limit = question_model_history_token_limit,
-            custom_history = question_model_custom_history,
-            verbose = verbose,
-        )
+            print(f'requires RAG: {requires_rag}')
+
+        if requires_rag:
+            response, token_count = self.respond_to_standalone_question(
+                standalone_query,
+                temperature = question_model_temperature,
+                n_documents = n_documents,
+                initial_retrieval_ratio = initial_retrieval_ratio,
+                fusion_factor = fusion_factor,
+                weighted_rank_threshold = weighted_rank_threshold,
+                filters = filters,
+                rerank = rerank,
+                rerank_score_threshold = rerank_score_threshold,
+                history_token_limit = question_model_history_token_limit,
+                custom_history = question_model_custom_history,
+                verbose = verbose,
+            )
+        else:
+            response, token_count = self.respond_to_standalone_question_norag(
+                query = standalone_query,
+                temperature = question_model_temperature,
+                history_token_limit=question_model_history_token_limit,
+                custom_history=question_model_custom_history,
+            )
         if verbose:
             print(f'initial response: {response}')
         processed_response, token_count = self.process_response(
@@ -387,6 +504,7 @@ class RetrievalAugmentedGenerator:
         query: str,
         history_model_temperature: Number = 0,
         history_model_custom_history:  Sequence[OpenAIMessageCountType] | None = None,
+        history_model_structured_response: bool = True,
         question_model_temperature: Number = 0,
         question_model_history_token_limit: int = 1_000,
         question_model_custom_history:  Sequence[OpenAIMessageCountType] | None = None,
@@ -405,28 +523,39 @@ class RetrievalAugmentedGenerator:
         verbose: bool = False,
     ) -> str | tuple[str, int]:
 
-        standalone_query, query_length = await self.amake_standalone_question(
+        standalone_query, requires_rag, query_length = await self.amake_standalone_question(
             query,
             temperature = history_model_temperature,
             custom_history = history_model_custom_history,
+            use_structured_response = history_model_structured_response,
         )
         if verbose:
             print(f'initial query: {query}')
             print(f'standalone question: {standalone_query}')
-        response, token_count = await self.arespond_to_standalone_question(
-            standalone_query,
-            temperature = question_model_temperature,
-            n_documents = n_documents,
-            initial_retrieval_ratio = initial_retrieval_ratio,
-            fusion_factor = fusion_factor,
-            weighted_rank_threshold = weighted_rank_threshold,
-            filters = filters,
-            rerank = rerank,
-            rerank_score_threshold = rerank_score_threshold,
-            history_token_limit = question_model_history_token_limit,
-            custom_history = question_model_custom_history,
-            verbose = verbose,
-        )
+            print(f'requires RAG: {requires_rag}')
+
+        if requires_rag:
+            response, token_count = await self.arespond_to_standalone_question(
+                standalone_query,
+                temperature = question_model_temperature,
+                n_documents = n_documents,
+                initial_retrieval_ratio = initial_retrieval_ratio,
+                fusion_factor = fusion_factor,
+                weighted_rank_threshold = weighted_rank_threshold,
+                filters = filters,
+                rerank = rerank,
+                rerank_score_threshold = rerank_score_threshold,
+                history_token_limit = question_model_history_token_limit,
+                custom_history = question_model_custom_history,
+                verbose = verbose,
+            )
+        else:
+            response, token_count = await self.arespond_to_standalone_question_norag(
+                query = standalone_query,
+                temperature = question_model_temperature,
+                history_token_limit=question_model_history_token_limit,
+                custom_history=question_model_custom_history,
+            )
         if verbose:
             print(f'initial response: {response}')
         processed_response, token_count = await self.aprocess_response(

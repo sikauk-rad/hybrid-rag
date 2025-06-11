@@ -22,7 +22,7 @@ class BaseAzureModelDetails(ABC, BaseModel):
     azure_endpoint: str
     azure_version: str
     api_key: str
-    function: Literal['chat', 'embedding', 'cross-encoding']
+    function: Literal['chat', 'embedding', 'cross-encoding', 'reasoning']
 
 
     @classmethod
@@ -76,6 +76,7 @@ class AzureChatModelDetails(BaseAzureModelDetails):
     azure_endpoint: str
     azure_version: str
     api_key: str
+    supports_structured: bool | None
     function: Literal['chat'] = 'chat'
 
 

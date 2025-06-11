@@ -14,6 +14,8 @@ from .utilities import get_allowed_history
 from .text_transformers.embedding_transformers import EmbeddingCache
 from datetime import date, datetime
 from collections.abc import Sequence
+from pydantic import BaseModel
+from pydantic_core import from_json
 
 
 @beartype
@@ -173,6 +175,7 @@ class AzureChatModelInterface(ChatModelInterface):
         token_output_limit: int | None = None,
         base_model_name: str | None = None,
         knowledge_cutoff_date: date | datetime | None = None,
+        supports_structured: bool = False,
     ) -> None:
 
         self.sync_client = sync_client
@@ -188,6 +191,21 @@ class AzureChatModelInterface(ChatModelInterface):
             'model': self.model_name,
             'n': 1,
         }
+        self.supports_structured = supports_structured
+
+
+    def trim(
+        self,
+        messages: Sequence[OpenAIMessageType],
+        message_preservation_indices: Sequence[int] | None = None,
+        custom_token_limit: int | None = None,
+    ) -> list[OpenAIMessageType]:
+
+            return get_allowed_history(
+                messages,
+                message_preservation_indices = message_preservation_indices,
+                token_limit = self.token_input_limit if custom_token_limit is None else custom_token_limit,
+            )
 
 
     def respond(
@@ -232,10 +250,10 @@ class AzureChatModelInterface(ChatModelInterface):
     ) -> tuple[str, int] | str:
 
         return self.respond(
-            messages = get_allowed_history(
-                messages,
-                self.token_input_limit if custom_token_limit is None else custom_token_limit,
-                message_preservation_indices = message_preservation_indices,
+            messages = self.trim(
+                messages = messages, 
+                message_preservation_indices = message_preservation_indices, 
+                custom_token_limit = custom_token_limit,
             ),
             temperature = temperature,
             return_token_count = return_token_count,
@@ -252,11 +270,99 @@ class AzureChatModelInterface(ChatModelInterface):
     ) -> tuple[str, int] | str:
 
         return await self.arespond(
-            messages = get_allowed_history(
-                messages,
-                self.token_input_limit if custom_token_limit is None else custom_token_limit,
-                message_preservation_indices = message_preservation_indices,
+            messages = self.trim(
+                messages = messages, 
+                message_preservation_indices = message_preservation_indices, 
+                custom_token_limit = custom_token_limit,
             ),
+            temperature = temperature,
+            return_token_count = return_token_count,
+        )
+
+
+    def respond_structured(
+        self,
+        messages: Sequence[OpenAIMessageType],
+        response_format: type[BaseModel],
+        temperature: Number = 0,
+        return_token_count: bool = False,
+    ) -> tuple[BaseModel, int] | BaseModel:
+
+        if not self.supports_structured:
+            raise ValueError('model does not support structured outputs.')
+
+        response = self.sync_client.beta.chat.completions.parse(
+            **self.chat_parameters,
+            temperature = temperature,
+            messages = messages,
+            response_format = response_format,
+        )
+
+        out = response_format.model_validate_json(response.choices[0].message.content)
+        return (out, response.usage.completion_tokens) if return_token_count else out
+
+
+    async def arespond_structured(
+        self,
+        messages: Sequence[OpenAIMessageType],
+        response_format: type[BaseModel],
+        temperature: Number = 0,
+        return_token_count: bool = False,
+    ) -> tuple[BaseModel, int] | BaseModel:
+
+        if not self.supports_structured:
+            raise ValueError('model does not support structured outputs.')
+
+        response = await self.async_client.beta.chat.completions.parse(
+            **self.chat_parameters,
+            temperature = temperature,
+            messages = messages,
+            response_format = response_format,
+        )
+
+        out = response_format.model_validate_json(response.choices[0].message.content)
+        return (out, response.usage.completion_tokens) if return_token_count else out
+
+
+    def trim_and_respond_structured(
+        self,
+        messages: Sequence[OpenAIMessageCountType],
+        response_format: type[BaseModel],
+        temperature: Number = 0,
+        return_token_count: bool = False,
+        message_preservation_indices: Sequence[int] | None = None,
+        custom_token_limit: int | None = None,
+    ) -> tuple[BaseModel, int] | BaseModel:
+
+        return self.respond_structured(
+            messages = self.trim(
+                messages = messages, 
+                message_preservation_indices = message_preservation_indices, 
+                custom_token_limit = custom_token_limit,
+            ),
+            response_format = response_format,
+            temperature = temperature,
+            return_token_count = return_token_count,
+        )
+
+
+    async def atrim_and_respond_structured(
+        self,
+        messages: Sequence[OpenAIMessageCountType],
+        response_format: type[BaseModel],
+        temperature: Number = 0,
+        return_token_count: bool = False,
+        message_preservation_indices: Sequence[int] | None = None,
+        custom_token_limit: int | None = None,
+    ) -> tuple[BaseModel, int] | BaseModel:
+
+        return await self.arespond_structured(
+            messages = self.trim(
+                messages = messages, 
+                message_preservation_indices = message_preservation_indices, 
+                custom_token_limit = custom_token_limit,
+            ),
+            response_format = response_format,
             temperature = temperature,
             return_token_count = return_token_count,
         )

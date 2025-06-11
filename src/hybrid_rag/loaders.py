@@ -154,6 +154,7 @@ def load_model_from_azure_model_details(
                 token_input_limit = azure_model_details.token_input_limit,
                 token_output_limit = azure_model_details.token_output_limit,
                 knowledge_cutoff_date = azure_model_details.knowledge_cutoff_date,
+                supports_structured = azure_model_details.supports_structured,
             )
         case _:
             raise ValueError('unrecognised function.')
