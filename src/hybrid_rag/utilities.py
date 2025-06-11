@@ -30,9 +30,12 @@ def check_all_arguments_are_none_or_not(
 @beartype
 def hash_repr_deterministic(
    object,
-) -> str:
+) -> str | None:
 
-    return sha256(f'{object}'.encode('utf-8')).hexdigest()
+   if object is None:
+      return None
+   else:
+      return sha256(f'{object}'.encode('utf-8')).hexdigest()
 
 
 @beartype
