@@ -7,6 +7,7 @@ from warnings import warn
 from collections.abc import Sequence, Iterable
 from numbers import Number
 from typing import Literal
+from hashlib import sha256
 
 def check_all_arguments_are_none_or_not(
     *args,
@@ -24,6 +25,14 @@ def check_all_arguments_are_none_or_not(
 
     all_none = [arg is None for arg in args]
     return not (any(all_none) and (not all(all_none)))
+
+
+@beartype
+def hash_repr_deterministic(
+   object,
+) -> str:
+
+    return sha256(f'{object}'.encode('utf-8')).hexdigest()
 
 
 @beartype
